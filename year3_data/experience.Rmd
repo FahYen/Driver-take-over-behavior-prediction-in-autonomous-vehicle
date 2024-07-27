@@ -1,0 +1,68 @@
+---
+title: "experience"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(tidyverse)
+experience.df = read_csv(".\\Demographic.csv") %>% select(id, age, years, annual_mile, daily, av_experience)
+str(experience.df)
+```
+
+```{r}
+library(GPArotation)
+library(psych)
+library(corrplot) 
+
+# Assuming your data frame is named 'df'
+
+# Step 2: Prepare the data
+# Select only the experience-related columns for the factor analysis
+exp_data <- experience.df %>% select(age, years, annual_mile, daily, av_experience)
+
+
+# check assumptions
+datamatrix <- cor(exp_data)
+corrplot(datamatrix, method="number")
+
+# Calculate the KMO measure
+kmo_result <- KMO(exp_data)
+
+# View the KMO result
+print(kmo_result$KMO) # Overall KMO
+print(kmo_result)     # Individual measures of sampling adequacy for each variable
+
+
+
+
+
+# Step 3: Conduct the factor analysis
+# Perform the factor analysis assuming one common factor, you can change the number of factors based on your assessment
+fa_result <- fa(exp_data, nfactors = 1, rotate = "varimax")
+
+# Check the summary to see if one factor is sufficient
+print(fa_result)  # Adjust nfactors based on the eigenvalues and scree plot if necessary
+
+# Step 4: Generate the factor scores
+factor_scores <- fa_result$scores  # Extract the factor scores
+
+# Step 5: Combine the factor scores with the participant IDs
+# Assuming your participant ID column in df is named "participant_id"
+final_data <- experience.df%>%
+  select(id) %>%
+  bind_cols(factor_scores)
+
+# View the final data with factor scores
+print(final_data)
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

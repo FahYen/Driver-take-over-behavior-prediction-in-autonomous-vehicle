@@ -1,0 +1,412 @@
+---
+title: "data_plot"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+#load data
+
+library(tidyverse)
+#scl.label = read_csv("D:\\Cloud Drives\\OneDrive - purdue.edu\\Documents\\Rprojects\\year3_data\\shimmer_scl.csv")
+rt = read_csv("D:\\Cloud Drives\\OneDrive - purdue.edu\\Documents\\Rprojects\\year3_data\\RT.csv") 
+tot = rt %>% dplyr::select(id, task, RT_adoff, RT_steer) %>% mutate(Task = as.factor(task)) 
+str(tot)
+hr = read_csv("D:\\Cloud Drives\\OneDrive - purdue.edu\\Documents\\Rprojects\\year3_data\\hr.csv") 
+str(hr)
+```
+
+
+
+
+```{r}
+#takeovertime
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(RT_adoff~Task+Error(factor(id)), data = tot)
+summary(model)
+
+library(nlme)
+
+model = lme(RT_adoff ~ Task, data=tot, random = ~1|id)
+anova(model)
+
+library(multcomp)
+summary(glht(model, linfct=mcp(Task = "Tukey")), test = adjusted(type = "bonferroni"))
+
+#calculate mean and sem
+tot_plot = tot %>% dplyr::group_by(task) %>% dplyr::summarise(n=n(),mean = mean(RT_adoff),sd = sd(RT_adoff)) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task = case_when(
+            task == "P" ~ "Word_Search",
+            task == "J" ~ "Jigsaw",
+            task == "M" ~ "Creation_Poem",
+            task == "W" ~ "Creation_Word",
+            task == "D" ~ "No_Task",
+            TRUE ~ as.character(task)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(tot_plot, aes(x=factor(task), y=mean, fill = task)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "Takeover Time")+
+  ggtitle("Takeover Time (TOR1 -> AD_off) by Task Condition")
+```
+
+
+```{r}
+#hands on wheel time
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(RT_steer~Task+Error(factor(id)), data = tot)
+summary(model)
+
+library(nlme)
+
+model = lme(RT_steer ~ Task, data=tot, random = ~1|id)
+anova(model)
+
+library(multcomp)
+summary(glht(model, linfct=mcp(Task = "Tukey")), test = adjusted(type = "bonferroni"))
+
+#calculate mean and sem
+tot_plot = tot %>% dplyr::group_by(task) %>% dplyr::summarise(n=n(),mean = mean(RT_steer),sd = sd(RT_steer)) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task = case_when(
+            task == "P" ~ "Word_Search",
+            task == "J" ~ "Jigsaw",
+            task == "M" ~ "Creation_Poem",
+            task == "W" ~ "Creation_Word",
+            task == "D" ~ "No_Task",
+            TRUE ~ as.character(task)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(tot_plot, aes(x=factor(task), y=mean, fill = task)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "Hands-on-wheel Time")+
+  ggtitle("Hands-on-wheel Time (TOR1 -> steer angle > 2 degrees) by Task Condition")
+```
+```{r}
+#load scl.summary 
+scl.summary = scl.summary %>% mutate(Task = as.factor(task))
+```
+
+
+
+```{r}
+#mean scl
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(mean_scl ~Task+Error(factor(id)), data = scl.summary)
+summary(model)
+
+library(nlme)
+
+model = lme(mean_scl ~ Task, data=scl.summary, random = ~1|id)
+anova(model)
+
+library(multcomp)
+summary(glht(model, linfct=mcp(Task = "Tukey")), test = adjusted(type = "bonferroni"))
+
+#calculate mean and sem
+scl_plot = scl.summary %>% dplyr::group_by(task) %>% dplyr::summarise(n=n(),mean = mean(mean_scl),sd = sd(mean_scl)) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task = case_when(
+            task == "P" ~ "Word_Search",
+            task == "J" ~ "Jigsaw",
+            task == "M" ~ "Creation_Poem",
+            task == "W" ~ "Creation_Word",
+            task == "D" ~ "No_Task",
+            TRUE ~ as.character(task)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(scl_plot, aes(x=factor(task), y=mean, fill = task)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "SCL(mu_Siemens)")+
+  ggtitle("Mean Skin Conudctance Level by Task Condition (z-standardizes per trial)")
+```
+
+```{r}
+#std scl
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(stdev_scl ~Task+Error(factor(id)), data = scl.summary)
+summary(model)
+
+library(nlme)
+
+model = lme(stdev_scl ~ Task, data=scl.summary, random = ~1|id)
+anova(model)
+
+library(multcomp)
+summary(glht(model, linfct=mcp(Task = "Tukey")), test = adjusted(type = "bonferroni"))
+
+#calculate mean and sem
+scl_plot = scl.summary %>% dplyr::group_by(task) %>% dplyr::summarise(n=n(),mean = mean(stdev_scl),sd = sd(stdev_scl)) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task = case_when(
+            task == "P" ~ "Word_Search",
+            task == "J" ~ "Jigsaw",
+            task == "M" ~ "Creation_Poem",
+            task == "W" ~ "Creation_Word",
+            task == "D" ~ "No_Task",
+            TRUE ~ as.character(task)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(scl_plot, aes(x=factor(task), y=mean, fill = task)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "SCL(mu_Siemens)")+
+  ggtitle("Standard Deviation of Skin Conudctance Level by Task Condition (z-standardizes per trial)")
+```
+
+```{r}
+#clean HR data
+library(janitor)
+# Rename columns
+hr.label = hr %>% dplyr::select(c(1,2,9,14,16,17,18,19,23,24,29,30,34)) %>% clean_names("snake") %>% separate(task, into = c("task1", "task2"), sep = 1) %>% mutate(Task = as.factor(task1)) %>% filter(task2 == "1")
+str(hr.label)
+#hr.label.check = hr.label %>% group_by (id) %>%  summarise(number = n())
+
+```
+```{r}
+#mean HR
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(mean_hr_beats_min ~Task+Error(factor(id)), data = hr.label)
+summary(model)
+
+
+
+#calculate mean and sem
+hr_plot = hr.label %>% dplyr::group_by(task1) %>% dplyr::summarise(n=n(),mean = mean(mean_hr_beats_min),sd = sd(mean_hr_beats_min)) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task1 = case_when(
+            task1 == "P" ~ "Word_Search",
+            task1 == "J" ~ "Jigsaw",
+            task1 == "M" ~ "Creation_Poem",
+            task1 == "W" ~ "Creation_Word",
+            task1 == "D" ~ "No_Task",
+            TRUE ~ as.character(task1)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(hr_plot, aes(x=factor(task1), y=mean, fill = task1)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "mean HR (beats/min)")+
+  ggtitle("Mean Heart Rate by Task Condition")
+```
+
+```{r}
+#max HR
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(max_hr_beats_min ~Task+Error(factor(id)), data = hr.label)
+summary(model)
+
+#calculate mean and sem
+hr_plot = hr.label %>% dplyr::group_by(task1) %>% dplyr::summarise(n=n(),mean = mean(max_hr_beats_min),sd = sd(max_hr_beats_min)) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task1 = case_when(
+            task1 == "P" ~ "Word_Search",
+            task1 == "J" ~ "Jigsaw",
+            task1 == "M" ~ "Creation_Poem",
+            task1 == "W" ~ "Creation_Word",
+            task1 == "D" ~ "No_Task",
+            TRUE ~ as.character(task1)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(hr_plot, aes(x=factor(task1), y=mean, fill = task1)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "Max HR (beats/min)")+
+  ggtitle("Maximum Heart Rate by Task Condition")
+```
+```{r}
+#RMSSD
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(rmssd_ms ~Task+Error(factor(id)), data = hr.label)
+summary(model)
+
+#calculate mean and sem
+hr_plot = hr.label %>% dplyr::group_by(task1) %>% dplyr::summarise(n=n(),mean = mean(rmssd_ms),sd = sd(rmssd_ms)) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task1 = case_when(
+            task1 == "P" ~ "Word_Search",
+            task1 == "J" ~ "Jigsaw",
+            task1 == "M" ~ "Creation_Poem",
+            task1 == "W" ~ "Creation_Word",
+            task1 == "D" ~ "No_Task",
+            TRUE ~ as.character(task1)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(hr_plot, aes(x=factor(task1), y=mean, fill = task1)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "RMSSD (ms)")+
+  ggtitle("RMSSD by Task Condition")
+```
+
+```{r}
+#SDNN
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(sdnn_ms ~Task+Error(factor(id)), data = hr.label)
+summary(model)
+
+#calculate mean and sem
+hr_plot = hr.label %>% dplyr::group_by(task1) %>% dplyr::summarise(n=n(),mean = mean(sdnn_ms),sd = sd(sdnn_ms)) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task1 = case_when(
+            task1 == "P" ~ "Word_Search",
+            task1 == "J" ~ "Jigsaw",
+            task1 == "M" ~ "Creation_Poem",
+            task1 == "W" ~ "Creation_Word",
+            task1 == "D" ~ "No_Task",
+            TRUE ~ as.character(task1)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(hr_plot, aes(x=factor(task1), y=mean, fill = task1)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "SDNN(ms)")+
+  ggtitle("SDNN by Task Condition")
+```
+```{r}
+#LF
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(lf_ms_2  ~Task+Error(factor(id)), data = hr.label)
+summary(model)
+
+#calculate mean and sem
+hr_plot = hr.label %>% dplyr::group_by(task1) %>% dplyr::summarise(n=n(),mean = mean(lf_ms_2 ),sd = sd(lf_ms_2 )) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task1 = case_when(
+            task1 == "P" ~ "Word_Search",
+            task1 == "J" ~ "Jigsaw",
+            task1 == "M" ~ "Creation_Poem",
+            task1 == "W" ~ "Creation_Word",
+            task1 == "D" ~ "No_Task",
+            TRUE ~ as.character(task1)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(hr_plot, aes(x=factor(task1), y=mean, fill = task1)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "LF Power (ms^2)")+
+  ggtitle("Low Frequency Power by Task Condition")
+```
+```{r}
+#HF
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(hf_ms_2  ~Task+Error(factor(id)), data = hr.label)
+summary(model)
+
+#calculate mean and sem
+hr_plot = hr.label %>% dplyr::group_by(task1) %>% dplyr::summarise(n=n(),mean = mean(hf_ms_2 ),sd = sd(hf_ms_2 )) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task1 = case_when(
+            task1 == "P" ~ "Word_Search",
+            task1 == "J" ~ "Jigsaw",
+            task1 == "M" ~ "Creation_Poem",
+            task1 == "W" ~ "Creation_Word",
+            task1 == "D" ~ "No_Task",
+            TRUE ~ as.character(task1)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(hr_plot, aes(x=factor(task1), y=mean, fill = task1)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "HF Power (ms^2)")+
+  ggtitle("High Frequency Power by Task Condition")
+```
+```{r}
+#HF/LF
+#repeated measures anova
+#fit repeated measures ANOVA model
+
+model <- aov(lf_hf_ratio  ~Task+Error(factor(id)), data = hr.label)
+summary(model)
+
+#calculate mean and sem
+hr_plot = hr.label %>% dplyr::group_by(task1) %>% dplyr::summarise(n=n(),mean = mean(lf_hf_ratio ),sd = sd(lf_hf_ratio)) %>% dplyr::mutate(sem = sd/sqrt(n-1), 
+         CI_lower = mean + sem,  
+         CI_upper = mean - sem )%>%
+  # change task column name 
+          mutate(task1 = case_when(
+            task1 == "P" ~ "Word_Search",
+            task1 == "J" ~ "Jigsaw",
+            task1 == "M" ~ "Creation_Poem",
+            task1 == "W" ~ "Creation_Word",
+            task1 == "D" ~ "No_Task",
+            TRUE ~ as.character(task1)  # This line is just a fallback in case there are other values
+          ))
+
+# plot dogged bar plots
+ggplot(hr_plot, aes(x=factor(task1), y=mean, fill = task1)) +
+  geom_bar(position=position_dodge(), stat="identity", colour='black') +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), width=.2,position=position_dodge(.9))+
+  labs(x ="Task", y = "LF/HF Ratio")+
+  ggtitle("LF/HF Ratio by Task Condition")
+```
+```{r}
+#correlation calculation 
+correlation.df = hr.label %>% left_join(tot,by = c("id", "Task")) %>% left_join(scl.summary,by = c("id", "Task")) %>% dplyr::select(RT_steer, mean_scl, stdev_scl, max_hr_beats_min, mean_hr_beats_min, rmssd_ms, sdnn_ms, hf_ms_2, lf_hf_ratio) %>% drop_na()
+
+library(corrplot)
+corrplot(cor(correlation.df))
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

@@ -1,0 +1,97 @@
+---
+title: "GSR"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+
+```{r, message=FALSE}
+
+#load files
+library(tidyverse)
+library(readr)
+# directory with CSV files
+root_dir <- "D:\\Ford_Project\\Ford_Year_3\\GSR\\"
+
+# list all CSV files
+all_csv_files <- list.files(path = root_dir, pattern = "\\.csv$", full.names = TRUE, recursive = TRUE)
+
+# read all CSV files into a list of dataframes
+list_df <- lapply(all_csv_files, function(x) {
+  df <- read_delim(x, skip = 3, col_names = FALSE)
+  df$filename <- basename(x)  # file name
+  df$dirname <- dirname(x)    # directory name
+  df
+})
+
+# bind all dataframes into one
+df <- bind_rows(list_df)
+
+str(df)
+```
+
+
+``` {r}
+# create id and probe labels
+df.label = df %>% mutate(X1 = format(X1, scientific = FALSE)) %>% rename(time = X1, acc_x = X2, acc_y = X3 , acc_z = X4, scl = X6, sr = X7, ppg = X8) %>% mutate(task = substr(filename ,1L,2L), id = substr(dirname,35L,36L),id = as.numeric(id))  %>% select(id,task,time,acc_x, acc_y, acc_z, scl,sr,ppg)
+
+scl.label = df.label %>%  select(id, task, time, scl)
+```
+
+```{r}
+str(df.label)
+```
+
+```{r}
+library(tidyverse)
+#scl.label = read_csv("D:\\Cloud Drives\\OneDrive - purdue.edu\\Documents\\Rprojects\\year3_data\\shimmer_scl.csv")
+rt = read_csv("D:\\Cloud Drives\\OneDrive - purdue.edu\\Documents\\Rprojects\\year3_data\\RT.csv") 
+
+rt = rt %>% select(c(1,2,16)) %>% rename_with(~"start_time", .cols = 3)
+```
+```{r}
+scl = scl.label %>% group_by(id, task) %>% mutate(new_time = (time - min(time))/1000) %>% mutate(z_scl = scale(scl)) %>% separate(task, into = c("task1", "task2"), sep = 1) %>% filter(task2 == 1) %>% rename(task = task1) %>% left_join(rt, by = c("id", "task")) %>% mutate(time_diff = new_time - start_time) %>% filter(time_diff >= 0 & time_diff <= 30)
+```
+
+```{r}
+scl.summary = scl %>% group_by(id, task) %>% summarise(mean_scl = mean(z_scl), stdev_scl = sd(z_scl))
+```
+
+```{r}
+str(rt)
+str(scl)
+```
+
+
+```{r}
+write_csv(scl.label, "shimmer_scl.csv")
+write_csv(df.label, "shimmer.csv")
+```
+
+preocess scl data 
+```{r}
+library
+scaled_scl = read.csv(".\\shimmer_scl.csv")
+
+```
+
+```{r}
+scl_output = scaled_scl %>% filter(!grepl('0', task)) %>% group_by(id, task) %>% summarise(mean_scl = mean(scl), stdev_scl = sd(scl))
+```
+
+```{r}
+write.csv(scl_output,file = "scaled_scl.csv", row.names = FALSE)
+```
+
+
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

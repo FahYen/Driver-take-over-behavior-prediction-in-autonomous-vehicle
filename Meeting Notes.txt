@@ -1,0 +1,14 @@
+Oct 13
+Fah:
+Ignore resting/non-driving data. 
+Make prediction for AD_off 
+
+Oct 29
+Sample entropy has too many empty entries
+
+Nov 3
+RT Add off + RT steer for y
+eye tracking data is in.
+
+Nov 6
+deliverable: result feature selection. real time demo. 

@@ -1,0 +1,127 @@
+---
+title: "Feature Selection"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r, message= FALSE}
+library(tidyverse)
+df.raw = read_csv(".\\all_feature_nosubjective.csv")  
+
+str(df.raw)
+```
+
+
+## implement Baruta 
+```{r}
+library(Boruta)
+data = df.raw %>%  select(-c(id, task, RT_steer, y_first_gaze, y_first_fix, mean_scl, stdev_scl)) #%>% na.omit()
+
+# Prepare the predictors and response variables
+response <- data$RT_adoff
+predictors <- data %>% select(-RT_adoff)
+
+# Convert factors to numeric if necessary
+predictors <- predictors %>% mutate(across(where(is.factor), as.numeric))
+
+# Run Boruta on your dataset
+set.seed(123) # Setting a seed for reproducibility
+boruta_output <- Boruta(as.data.frame(predictors), as.factor(response), getImp =  getImpRfZ,doTrace = 2, ntree=500)
+
+# Plot the results
+plot(boruta_output, las = 2, cex.axis = 0.7)
+
+# Get the final selected features
+final_features <- getSelectedAttributes(boruta_output, withTentative = TRUE)
+
+# Optionally, print the final features
+print(final_features)
+
+# Refine your dataset with the selected features
+final_data <- data %>% 
+  select(RT_adoff, all_of(final_features))
+
+# Show the first few rows of the refined dataset
+head(final_data)
+```
+
+#
+```{r}
+# Run Boruta on your dataset
+set.seed(123) # Setting a seed for reproducibility
+
+
+#use extratrees 
+boruta_output <- Boruta(as.data.frame(predictors), as.factor(response), getImp =  getImpRfGini, doTrace = 2)
+
+# Plot the results  ` 
+plot(boruta_output, las = 2, cex.axis = 0.7)
+
+# Get the final selected features
+final_features <- getSelectedAttributes(boruta_output, withTentative = TRUE)
+
+# Optionally, print the final features
+print(final_features)
+
+# Refine your dataset with the selected features
+final_data <- data %>% 
+  select(RT_adoff, all_of(final_features))
+
+# Show the first few rows of the refined dataset
+head(final_data)
+```
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+```{r}
+
+library(glmnet)
+library(methods)
+train_rows <- ceiling((dim(predictors)[1])*.85) #Gives 85-15 train/test split
+
+predictors.train <- predictors[1:train_rows,]
+response.train <- response[1:train_rows]
+
+predictors.test <- predictors[dim(predictors)[1]:(train_rows+1),]
+response.test <- response[dim(predictors)[1]:(train_rows+1)]
+
+models <- list()
+for (i in 0:20) {
+  name <- paste0("alpha", i/20)
+  
+
+  models[[name]] <- glmnet(predictors.train, response.train, type.measure="mse", alpha=i/20,family="gaussian")
+}
+
+results <- data.frame()
+for (j in 0:20) {
+  name <- paste0("alpha", j/20)
+  
+  ## Use each model to predict 'y' given the Testing dataset
+  predicted <- predict(models[[name]], s=models[[name]]$lambda.1se, 
+                       newx=data.matrix(predictors.test))
+  
+  ## Calculate the Mean Squared Error...
+  mse <- mean((response.test - predicted)^2)
+  
+  ## Store the results
+  temp <- data.frame(alpha=j/20, mse=mse, name=name)
+  results <- rbind(results, temp)
+  
+}
+results
+
+print("\n\nHERE!!\n\n")
+predict(models[["alpha0"]], type = "coef")[1:10,]
+
+```
+

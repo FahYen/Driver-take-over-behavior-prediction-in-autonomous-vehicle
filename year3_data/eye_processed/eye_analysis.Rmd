@@ -1,0 +1,454 @@
+---
+title: "year3 eye processed"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+#define function for spatial density calculation 
+library(sf)
+calculate_ch <- function(x,y) {
+points_matrix <- matrix(c(x, y), ncol = 2)
+points_sf <- st_as_sf(x = data.frame(points_matrix), coords = 1:2)
+
+# Compute the convex hull
+convex_hull_sf <- st_convex_hull(st_combine(points_sf))
+
+# Calculate the area
+area <- st_area(convex_hull_sf)
+  return(area)
+}
+
+#define my own entropy calculation function 
+library(entropy)
+calculate_entropy <- function(x,y, xrange, yrange) {
+#cell definition, 10X10 pixel per cell
+  range_x <- c(0,xrange)
+  range_y <- c(0,yrange)
+  dis <- entropy::discretize2d(x,y, xrange/10 ,yrange/10, range_x, range_y)
+  a<-entropy:: entropy(dis,unit="log2")
+  return(a)
+}
+
+
+#function for spatial density 
+calculate_sd <- function(x,y, xrange, yrange) {
+#cell definition, 10X10 pixel per cell
+  range_x <- c(0,xrange)
+  range_y <- c(0,yrange)
+  dis <- as.data.frame(entropy::discretize2d(x,y, xrange/10 ,yrange/10, range_x, range_y))
+  total_rows <- nrow(dis)
+  rows_greater_than_zero <- sum(dis$Freq > 0, na.rm = TRUE)
+  a <- (rows_greater_than_zero / total_rows) 
+  return(a)
+}
+
+
+#function for NNI
+library(spatstat.geom)
+calculate_NNI <- function(x,y) {
+  dNN <- sum(spatstat.geom::nndist(x, y))
+  A <- calculate_ch(x, y)
+  N <- length(x)
+  dran <- 0.5 * sqrt(A/N)
+  NNI <- dNN/dran 
+  return(NNI)
+}
+
+```
+
+
+
+```{r}
+library(tidyverse)
+
+file_path <- ".\\year3_raw\\Year3_raw_A.tsv"
+
+data.raw.A <- read_tsv(file_path) 
+eye.raw.A <- data.raw.A %>% filter(Sensor == 'Eye Tracker')
+```
+
+```{r}
+library(janitor)
+library(tidyverse)
+#clean data frame 
+eye.data.A = eye.raw.A %>% clean_names(., "snake") %>% mutate(id = str_sub(participant_name, start = 2, end = 3),
+                                                              task = str_sub(participant_name, start = 5, end = 6), time_ms = recording_timestamp/1000) %>% group_by(id, task) %>% mutate(time_ms = (recording_timestamp - first(recording_timestamp))/1000) %>% ungroup()
+
+
+
+fixation.A <- eye.data.A %>% group_by(id, task, eye_movement_type, eye_movement_type_index) %>% 
+  dplyr::summarize(
+            type = first(eye_movement_type),
+            mapped_type = first(mapped_eye_movement_type_index_main_driving),
+            x = first(fixation_point_x),
+            y = first(fixation_point_y),
+            mapped_x = first(mapped_fixation_x_main_driving), 
+            mapped_y = first(mapped_fixation_y_main_driving),
+            start = min(time_ms), 
+            stop = max(time_ms),
+            duration_s = (max(time_ms)- min(time_ms))/1000,
+            first_gaze_x = first(gaze_point_x),
+            first_gaze_y = first(gaze_point_y),
+            mean_pupil = mean(pupil_diameter_filtered)
+            )  %>% filter(type != "EyesNotFound") %>% dplyr::arrange(start, .by_group = TRUE) %>% ungroup()
+
+gaze.A <- eye.data.A %>% group_by(id, task) %>% 
+  select(id, task, time_ms, gaze_point_x, gaze_point_y, mapped_gaze_point_x_main_driving, mapped_gaze_point_y_main_driving, pupil_diameter_filtered) %>% 
+  filter(!is.na(gaze_point_x))
+
+#test= gaze.A %>% group_by(id, task) %>% summarise(row_count= n())
+#sampling rate of the eye trackert is 100 Hz
+
+```
+
+```{r}
+library(tidyverse)
+#total fixation duratgion and count 
+total.fix.A = fixation.A %>% filter(!grepl('0', task)) %>%   #filter out all task only and baseline cases
+  filter(type == "Fixation") %>% 
+  group_by(id, task) %>% dplyr::summarise(fix_count = n(), 
+                                          fix_dur = sum(duration_s), 
+                                          fix_rate = n()/30,
+                                          mean_fix_dur = sum(duration_s)/n())
+
+
+
+
+# total fixcation duration and count in drivng, and scanpath length in driving 
+driving.fix.A = fixation.A %>% filter(!grepl('0', task)) %>%   #filter out all task only and baseline cases
+  filter(type == "Fixation") %>% filter(!is.na(mapped_x)) %>% 
+  group_by(id, task) %>%  dplyr::arrange(start, .by_group = TRUE) %>% 
+  mutate(
+    diff_x = mapped_x - lag(mapped_x),
+    diff_y = mapped_y - lag(mapped_y)
+  ) %>%
+  mutate(
+    distance = sqrt(diff_x^2 + diff_y^2)
+  ) %>%
+  dplyr::summarise(
+    drv_scanpath_len = sum(distance, na.rm = TRUE),
+    drv_saccade_len = mean(distance, na.rm = TRUE),
+    drv_convex_hull = calculate_ch(mapped_x, mapped_y),
+    drv_fix_count = n(),
+    drv_fix_dur = sum(duration_s),
+    drv_fix_rate = n()/30,
+    drv_mean_fix_dur = sum(duration_s)/n()
+  ) 
+
+#test1 <- fixation.A %>% filter(!grepl('0', task)) %>%  group_by(id, task)  %>% arrange(start, .by_group = TRUE) %>% filter(type == "Fixation") 
+#number of fixation switches
+switch.count.A <- fixation.A %>% filter(!grepl('0', task)) %>%   #filter out all task only and baseline cases
+  group_by(id, task)  %>% dplyr::arrange(start, .by_group = TRUE) %>% filter(type == "Fixation") %>% 
+  dplyr::summarise(
+    switch_count = sum(
+      (!is.na(mapped_x) & is.na(lag(mapped_x))) | (is.na(mapped_x) & !is.na(lag(mapped_x))),
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+
+```
+
+```{r}
+# gaze related data
+
+#percent time in AOI
+percent_time_drv = gaze.A %>% group_by(id, task) %>% filter(!grepl('0', task)) %>% 
+  dplyr::summarise(
+    drv_percentage = (sum(!is.na(mapped_gaze_point_x_main_driving)) / n()), #count_non_na/total count
+    .groups = "drop"
+  )
+
+
+
+#calculate raw Spatial density and entropy 
+entropy.A = gaze.A %>% filter(!grepl('0', task)) %>% group_by(id, task) %>% 
+            dplyr::summarise(entropy_log2 = calculate_entropy(gaze_point_x, gaze_point_y,1920,1080), spatial_density = calculate_sd(gaze_point_x, gaze_point_y,1920,1080))
+
+#calculate stuff for driving gaze points 
+drv.entropy.A = gaze.A %>% filter(!grepl('0', task)) %>% 
+                filter(!is.na(mapped_gaze_point_x_main_driving)) %>% 
+                group_by(id, task) %>% 
+                dplyr::summarise(drv_entropy_log2 = calculate_entropy(mapped_gaze_point_x_main_driving, mapped_gaze_point_y_main_driving,1280,720), 
+                                 drv_spatial_density = calculate_sd(mapped_gaze_point_x_main_driving, mapped_gaze_point_y_main_driving,1280,720),
+                                 drv_NNI = calculate_NNI(mapped_gaze_point_x_main_driving, mapped_gaze_point_y_main_driving))
+                
+
+```
+
+```{r}
+#re-create cells and to look for transitions betwwnn cells
+# Use mutate from dplyr to add new columns
+grid_transition <- gaze.A %>% filter(!grepl('0', task)) %>%  filter(gaze_point_x >=0 & gaze_point_y >=0 ) %>% 
+    mutate(
+    x_cell = (gaze_point_x %/% 10) + 1, # 10 is cell width
+    y_cell = (gaze_point_y %/% 10) + 1, #10 is cell height
+    cell_label = ((y_cell - 1) * (1980 / 10) + x_cell),
+    change = cell_label != lag(cell_label, default = first(cell_label))
+  ) %>% group_by(id,task) %>%  
+    summarise (grid_transition = sum(change)/30)
+
+drv_grid_transition <- gaze.A %>% filter(!grepl('0', task)) %>%  filter(!is.na(mapped_gaze_point_x_main_driving))  %>% 
+    mutate(
+    x_cell = (mapped_gaze_point_x_main_driving %/% 10) + 1, # 10 is cell width
+    y_cell = (mapped_gaze_point_y_main_driving %/% 10) + 1, #10 is cell height
+    cell_label = ((y_cell - 1) * (1280 / 10) + x_cell),
+    change = cell_label != lag(cell_label, default = first(cell_label))
+  ) %>% group_by(id,task) %>%  
+    summarise (drv_grid_transition = sum(change)/(n()/100))#grid transition per secon, sampling rate at 100hz 
+```
+
+```{r}
+# Standardize pupil values
+standardized_pupil <- gaze.A %>%
+  # Calculate mean pupil for B0 tasks
+  group_by(id) %>%
+  summarize(b0_mean = mean(pupil_diameter_filtered[task == "B0"]), b0_std = sd(pupil_diameter_filtered[task == "B0"])) %>%
+  # Join the B0 mean back to the original data
+  right_join(gaze.A, by = "id") %>%
+  # Group by id and task
+  group_by(id, task) %>% 
+  # Remove all non-driving sessions
+  filter(!grepl('0', task)) %>% 
+  # Standardize pupil values for non-B0 tasks
+  mutate(pupil_z_score = (pupil_diameter_filtered - b0_mean)/b0_std, pupil_perc_change = (pupil_diameter_filtered - b0_mean)/b0_mean) %>%
+  # Optionally, you can select the columns you want to keep
+  select(id, task, pupil_diameter_filtered, pupil_z_score, pupil_perc_change)
+
+pupil.A = standardized_pupil %>% group_by(id, task) %>% 
+          summarise(pupil_raw = mean(pupil_diameter_filtered),
+                                           pupil_z = mean(pupil_z_score),
+                                           pupil_change = mean(pupil_perc_change))
+```
+
+
+
+```{r}
+#generate output
+data.output.A = percent_time_drv %>% left_join(pupil.A, by = c("id", "task")) %>% left_join(total.fix.A, by = c("id", "task")) %>% left_join(switch.count.A, by = c("id", "task")) %>% left_join(grid_transition, by = c("id", "task")) %>% left_join(entropy.A, by = c("id", "task"))  %>% left_join(driving.fix.A, by = c("id", "task")) %>% left_join(drv_grid_transition, by = c("id", "task")) %>% left_join(drv.entropy.A, by = c("id", "task"))%>% mutate(task = str_remove(task, "\\d"))
+
+data.output.A[is.na(data.output.A)] <- 0
+```
+
+
+```{r}
+write.csv(data.output,file = "eye.output.A.csv", row.names = FALSE)
+```
+
+
+```{r}
+# Read obervasion window B eye data
+file_path <- ".\\year3_raw\\Year3_raw_B.tsv"
+
+data.raw.B <- read_tsv(file_path) 
+eye.raw.B <- data.raw.B %>% filter(Sensor == 'Eye Tracker')
+```
+
+```{r}
+library(janitor)
+#clean data frame 
+eye.data.B = eye.raw.B %>% clean_names(., "snake") %>% mutate(id = str_sub(participant_name, start = 2, end = 3),
+                                                              task = str_sub(participant_name, start = 5, end = 6), time_ms = recording_timestamp/1000) %>% group_by(id, task) %>% mutate(time_ms = (recording_timestamp - first(recording_timestamp))/1000) %>% ungroup()
+
+
+
+fixation.B <- eye.data.B %>% group_by(id, task, eye_movement_type, eye_movement_type_index) %>% 
+  dplyr::summarize(
+            type = first(eye_movement_type),
+            mapped_type = first(mapped_eye_movement_type_index_main_driving),
+            x = first(fixation_point_x),
+            y = first(fixation_point_y),
+            mapped_x = first(mapped_fixation_x_main_driving), 
+            mapped_y = first(mapped_fixation_y_main_driving),
+            start = min(time_ms), 
+            stop = max(time_ms),
+            duration_s = (max(time_ms)- min(time_ms))/1000,
+            first_gaze_x = first(gaze_point_x),
+            first_gaze_y = first(gaze_point_y),
+            mean_pupil = mean(pupil_diameter_filtered)
+            )  %>% filter(type != "EyesNotFound") %>% dplyr::arrange(start, .by_group = TRUE) %>% ungroup()
+
+gaze.B <- eye.data.B %>% group_by(id, task) %>% 
+  select(id, task, time_ms, gaze_point_x, gaze_point_y, mapped_gaze_point_x_main_driving, mapped_gaze_point_y_main_driving, pupil_diameter_filtered) %>% 
+  filter(!is.na(gaze_point_x))
+
+
+```
+```{r}
+#calculate time to first fixation and first gaze on road 
+first_fix.B = fixation.B %>% 
+  #drop non mapped fixations
+  filter(!is.na(mapped_x)) %>% 
+  #we set a 150ms threshold here to filter out very short fixations. 
+  filter(duration_s >= 0.1) %>% 
+  group_by(id, task) %>% summarise(y_first_fix = min(start)/1000)
+
+
+first_gaze.B = gaze.B %>% 
+  #drop non mapped fixations
+  filter(!is.na(mapped_gaze_point_x_main_driving)) %>% 
+  #get the 7 th gaze point to allow sufficient attention to be established
+  group_by(id, task) %>%
+  summarise(
+    y_first_gaze = 
+      if(length(unique(time_ms)) >= 10) sort(unique(time_ms), decreasing = FALSE)[10]/1000 
+    else NA
+  ) 
+
+
+#calculate window length for each group 
+window_length.B = gaze.B %>% 
+  group_by(id, task) %>% 
+  summarise(window_length_s = (max(time_ms)-min(time_ms))/1000)
+
+
+
+#total fixation duratgion and count 
+total.fix.B = fixation.B %>% filter(!grepl('0', task)) %>%   #filter out all task only and baseline cases
+  filter(type == "Fixation") %>% 
+  left_join(window_length.B, by = c("id","task")) %>% 
+  group_by(id, task) %>% 
+  dplyr::summarise(fix_count_B = n(),
+                 fix_dur_B = sum(duration_s),
+                 fix_rate_B = n()/first(window_length_s),
+                 mean_fix_dur_B = sum(duration_s)/n())
+
+
+# total fixcation duration and count in drivng, and scanpath length in driving 
+driving.fix.B = fixation.B %>% filter(!grepl('0', task)) %>%   #filter out all task only and baseline cases
+  filter(type == "Fixation") %>% filter(!is.na(mapped_x)) %>% 
+  group_by(id, task) %>% left_join(window_length.B, by = c("id","task")) %>% dplyr::arrange(start, .by_group = TRUE) %>% 
+  mutate(
+    diff_x = mapped_x - lag(mapped_x),
+    diff_y = mapped_y - lag(mapped_y)
+  ) %>%
+  mutate(
+    distance = sqrt(diff_x^2 + diff_y^2)
+  ) %>%
+  dplyr::summarise(
+    drv_scanpath_len_B = sum(distance, na.rm = TRUE),
+    drv_saccade_len_B = mean(distance, na.rm = TRUE),
+    drv_convex_hull_B = calculate_ch(mapped_x, mapped_y),
+    drv_fix_count_B = n(),
+    drv_fix_dur_B = sum(duration_s),
+    drv_fix_rate_B = n()/first(window_length_s),
+    drv_mean_fix_dur_B = sum(duration_s)/n()
+  ) 
+
+#percent time in AOI
+percent_time_drv.B = gaze.B %>% group_by(id, task) %>% filter(!grepl('0', task)) %>% 
+  dplyr::summarise(
+    drv_percentage_B = (sum(!is.na(mapped_gaze_point_x_main_driving)) / n()), #count_non_na/total count
+    .groups = "drop"
+  )
+
+
+#re-create cells and to look for transitions betwwnn cells
+# Use mutate from dplyr to add new columns
+grid_transition.B <- gaze.B %>% filter(!grepl('0', task)) %>%  filter(gaze_point_x >=0 & gaze_point_y >=0 ) %>% 
+    mutate(
+    x_cell = (gaze_point_x %/% 10) + 1, # 10 is cell width
+    y_cell = (gaze_point_y %/% 10) + 1, #10 is cell height
+    cell_label = ((y_cell - 1) * (1980 / 10) + x_cell),
+    change = cell_label != lag(cell_label, default = first(cell_label))
+  ) %>% group_by(id,task) %>%  
+    summarise (grid_transition_B = sum(change)/30)
+
+drv_grid_transition.B <- gaze.B %>% filter(!grepl('0', task)) %>%  filter(!is.na(mapped_gaze_point_x_main_driving))  %>% 
+    mutate(
+    x_cell = (mapped_gaze_point_x_main_driving %/% 10) + 1, # 10 is cell width
+    y_cell = (mapped_gaze_point_y_main_driving %/% 10) + 1, #10 is cell height
+    cell_label = ((y_cell - 1) * (1280 / 10) + x_cell),
+    change = cell_label != lag(cell_label, default = first(cell_label))
+  ) %>% group_by(id,task) %>%  
+    summarise (drv_grid_transition_B = sum(change)/(n()/100))#grid transition per secon, sampling rate at 100hz 
+
+# Standardize pupil values
+standardized_pupil.B <- gaze.A %>%
+  # Calculate mean pupil for B0 tasks
+  group_by(id) %>%
+  summarize(b0_mean = mean(pupil_diameter_filtered[task == "B0"]), b0_std = sd(pupil_diameter_filtered[task == "B0"])) %>%
+  # Join the B0 mean back to the original data
+  right_join(gaze.B, by = "id") %>%
+  # Group by id and task
+  group_by(id, task) %>% 
+  # Remove all non-driving sessions
+  filter(!grepl('0', task)) %>% 
+  # Standardize pupil values for non-B0 tasks
+  mutate(pupil_z_score = (pupil_diameter_filtered - b0_mean)/b0_std, pupil_perc_change = (pupil_diameter_filtered - b0_mean)/b0_mean) %>%
+  # Optionally, you can select the columns you want to keep
+  select(id, task, pupil_diameter_filtered, pupil_z_score, pupil_perc_change)
+
+pupil.B = standardized_pupil.B %>% group_by(id, task) %>% 
+          summarise(pupil_raw_B = mean(pupil_diameter_filtered),
+                                           pupil_z_B = mean(pupil_z_score),
+                                           pupil_change_B = mean(pupil_perc_change))
+
+
+#entropy
+#calculate raw Spatial density and entropy 
+entropy.B = gaze.B %>% filter(!grepl('0', task)) %>% group_by(id, task) %>% 
+            dplyr::summarise(entropy_log2_B = calculate_entropy(gaze_point_x, gaze_point_y,1920,1080))
+
+#calculate stuff for driving gaze points 
+drv.entropy.B = gaze.B %>% filter(!grepl('0', task)) %>% 
+                filter(!is.na(mapped_gaze_point_x_main_driving)) %>% 
+                group_by(id, task) %>% 
+                dplyr::summarise(drv_entropy_log2_B = calculate_entropy(mapped_gaze_point_x_main_driving, mapped_gaze_point_y_main_driving,1280,720), 
+                                 drv_NNI_B = calculate_NNI(mapped_gaze_point_x_main_driving, mapped_gaze_point_y_main_driving))
+
+#number of fixation switches
+switch.count.B <- fixation.B %>% filter(!grepl('0', task)) %>%   #filter out all task only and baseline cases
+  group_by(id, task)  %>% dplyr::arrange(start, .by_group = TRUE) %>% filter(type == "Fixation") %>% 
+  dplyr::summarise(
+    switch_count = sum(
+      (!is.na(mapped_x) & is.na(lag(mapped_x))) | (is.na(mapped_x) & !is.na(lag(mapped_x))),
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+                
+```
+
+```{r}
+#generate output
+data.output.B = percent_time_drv.B %>% left_join(pupil.B, by = c("id", "task")) %>% 
+  left_join(total.fix.B, by = c("id", "task"))  %>% 
+  left_join(grid_transition.B, by = c("id", "task")) %>% 
+  left_join(driving.fix.B, by = c("id", "task")) %>% 
+  left_join(drv_grid_transition.B, by = c("id", "task")) %>% 
+  left_join(entropy.B, by = c("id", "task"))%>% 
+  left_join(drv.entropy.B, by = c("id", "task"))%>% 
+  left_join(grid_transition.B, by = c("id", "task"))%>% 
+  left_join(first_fix.B, by = c("id", "task")) %>% 
+  left_join(first_gaze.B, by = c("id", "task"))%>% 
+  left_join(switch.count.B, by = c("id", "task"))%>% 
+  mutate(task = str_remove(task, "\\d"))
+
+
+data.output.B[is.na(data.output.B)] <- 0
+```
+
+```{r}
+#combine observation window A and B
+combined.output = data.output.A %>% left_join(data.output.B, by= c("id", "task"))
+```
+
+
+
+```{r}
+#write.csv(data.output,file = "eye.output.csv", row.names = FALSE)
+write.csv(combined.output,file = "eye.outputAB.csv", row.names = FALSE)
+```
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

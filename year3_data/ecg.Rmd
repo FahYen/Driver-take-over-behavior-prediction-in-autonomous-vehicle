@@ -1,0 +1,64 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r, message = FALSE}
+library(tidyverse)
+library(readr)
+root_dir <- "D:\\Cloud Drives\\OneDrive - purdue.edu\\Second Ford\\Year 3\\ECG\\P02-B0.csv" 
+test <- read_csv(root_dir)
+
+
+folder_path <- "D:\\Cloud Drives\\OneDrive - purdue.edu\\Second Ford\\Year 3\\ECG\\"
+
+# List all CSV files in the folder
+csv_files <- list.files(path = folder_path, pattern = "\\.csv$", full.names = TRUE)
+
+# Read the specified rows and columns from each CSV file and combine them into a single data frame
+
+# add the filename, and combine them into a single data frame
+data <- csv_files %>%
+  purrr::map_df(function(file) {
+    read_csv(file, col_names = FALSE, trim_ws= TRUE, skip_empty_rows=TRUE, skip = 58) %>% 
+      slice(1:45) %>%
+      select(1:2) %>%
+      mutate(filename = basename(file))
+  })
+```
+
+```{r}
+# Extract characters and reshape
+reshaped_df <- data %>%
+  # Extract characters from filename
+  mutate(id = substr(filename, 2, 3),
+         task = substr(filename, 5, 6)) %>%
+  # Reshape the data
+  spread(key = X1, value = X2) %>% 
+  select(-c(1,4,8,9,10,27,28,29,31,32,40,42)) %>% 
+  mutate(task = as.factor(task)) %>%
+  mutate_at(vars(-task), as.numeric)
+
+#convert data to 
+
+
+str(reshaped_df)
+```
+
+```{r}
+write_csv(reshaped_df, "hr.csv")
+```
+
+
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

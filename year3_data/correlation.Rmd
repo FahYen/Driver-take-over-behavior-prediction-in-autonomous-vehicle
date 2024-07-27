@@ -1,0 +1,317 @@
+---
+title: "correlation"
+output: html_notebook
+---
+
+
+```{r}
+# read all data
+library(tidyverse)
+eye.df = read_csv(".\\eye_processed\\eye.output.csv")  %>% mutate(id = as.numeric(id))
+
+str(eye.df)
+driving.df = read_csv(".\\RT.csv")
+str(driving.df)
+scl.df = read_csv(".\\scaled_scl.csv")%>% mutate(task = str_remove(task, "\\d")) 
+str(scl.df)
+hrraw.df = read_csv(".\\hr.csv") %>% filter(!grepl('0', task))%>% mutate(task = str_remove(task, "\\d")) %>% filter(task != "B")
+pose.df = read_csv(".\\pose_mean.csv")
+str(pose.df)
+experience.df = read_csv(".\\Demographic.csv") %>% select(id, age, av_experience)
+str(experience.df)
+big.maneuver = read_csv(".\\all_feature_clasification.csv") %>% select(id, task, big_maneuver)
+
+```
+
+```{r}
+#clean data 
+library(janitor)
+#clean data frame 
+hr.df = hrraw.df %>% clean_names(., "snake") %>% select(id, task, mean_hr_beats_min, max_hr_beats_min, mean_rr_ms, rmssd_ms, sd_hr_beats_min, sdnn_ms, rr_tri_index, lf_ms_2, hf_ms_2, lf_hf_ratio, total_power_ms_2)
+
+#select driving 
+rt.df = driving.df %>% select(id, task, RT_adoff, RT_steer)
+```
+
+
+
+```{r}
+#join dataframes
+df = hr.df %>% left_join(eye.df, by = c("id", "task")) %>% left_join(scl.df, by = c("id", "task")) %>% left_join(rt.df, by = c("id", "task")) %>% left_join(pose.df, by = c("id", "task")) %>% left_join(experience.df, by = c("id"))
+str(df)
+```
+```{r}
+RT_adoff.df = df %>% select(-c(id, task, RT_steer, y_first_gaze, y_first_fix)) %>%  select(RT_adoff, everything())
+RT_adoff.df_0.25 = RT_adoff.df %>% select(RT_adoff, drv_percentage, pupil_z, pupil_change, switch_count, entropy_log2, drv_scanpath_len, drv_convex_hull, drv_fix_count, drv_fix_dur, drv_grid_transition, drv_entropy_log2, drv_spatial_density, drv_NNI)
+
+RT_steer.df = df %>% select(-c(id, task, y_first_gaze, y_first_fix,RT_adoff)) %>%  select(RT_steer, everything())
+#RT_steer.df_0.25 = RT_steer.df %>% select(RT_steer, drv_percentage, ppupil_z,pupil_change,  fix_count, switch_count, grid_transition, entropy_log2)
+
+library(Hmisc)
+adoff_matrix = rcorr(as.matrix(RT_adoff.df), type = "spearman")
+#adoff_matrix = rcorr(as.matrix(RT_adoff.df_0.25), type = "spearman")
+adoff_corr.df = as.data.frame(adoff_matrix$r)%>% select(RT_adoff) %>% tibble::rownames_to_column(var = "metric")
+#print(adoff_matrix)
+
+steer_matrix = rcorr(as.matrix(RT_steer.df), type = "spearman")
+#print(steer_matrix )
+steer_corr.df=as.data.frame(steer_matrix$r) %>% select(1) %>% tibble::rownames_to_column(var = "metric") 
+
+first_fix.df = df %>% select(-c(id, task,RT_adoff, RT_steer, y_first_gaze)) %>%  select(y_first_fix, everything())
+first_fix_matrix = rcorr(as.matrix(first_fix.df), type = "spearman")
+first_fix_corr.df=as.data.frame(first_fix_matrix$r) %>% select(1) %>% tibble::rownames_to_column(var = "metric")
+
+first_gaze.df = df %>% select(-c(id, task,RT_adoff, RT_steer, y_first_fix)) %>%  select(y_first_gaze, everything())
+first_gaze_matrix = rcorr(as.matrix(first_gaze.df), type = "spearman")
+first_gaze_corr.df=as.data.frame(first_gaze_matrix$r) %>% select(1) %>% tibble::rownames_to_column(var = "metric")
+
+corr.df = adoff_corr.df %>% left_join(steer_corr.df, by = c("metric")) %>% left_join(first_fix_corr.df, by = c("metric")) %>% left_join(first_gaze_corr.df, by = c("metric")) %>% drop_na() 
+
+corr.df_0.25 = corr.df %>%   rowwise() %>% mutate(max_value = max(abs(c_across(-1)), na.rm = TRUE)) %>% filter(max_value >=0.25)
+
+
+```
+
+
+```{r}
+#plot correlation 
+library(corrplot)
+
+png(filename = "RT_adoff_corr.png", width = 2400, height = 1600)
+#corrplot(adoff_matrix$r, method = 'ellipse', order = 'AOE', type = 'upper')
+corrplot.mixed(adoff_matrix$r, order = 'AOE')
+dev.off()
+
+png(filename = "RT_steer_corr.png", width = 2400, height = 1600)
+corrplot.mixed(steer_matrix$r, order = 'AOE')
+dev.off()
+
+png(filename = "firstfix_corr.png", width = 2400, height = 1600)
+corrplot.mixed(first_fix_matrix$r, order = 'AOE')
+dev.off()
+
+
+```
+
+```{r}
+#cosolidated dataset
+
+write.csv(df,file = "all_feature_nosubjective.csv", row.names = FALSE)
+
+```
+
+
+```{r}
+#logistic regression for correlation against big maneuver
+df.corr = df %>% left_join(big.maneuver, by = c("id","task")) %>% select(-c(id, task, RT_steer,RT_adoff, y_first_gaze, y_first_fix)) %>%  select(big_maneuver, everything())
+
+# Load the necessary libraries
+library(caret)
+library(MASS)
+
+
+
+# Fit a full logistic regression model with all predictors
+fullModel <- glm(big_maneuver ~ ., data = df.corr, family = binomial)
+
+# Summary of the full model to check initial coefficients
+summary(fullModel)
+
+# Stepwise feature selection using both directions (forward and backward)
+stepModel <- stepAIC(fullModel, direction = "both", trace = FALSE)
+
+# Summary of the stepwise model to check selected features and their coefficients
+summary(stepModel)
+```
+
+```{r}
+#Linear mixed model for feature selection 
+library(dplyr)
+library(lme4)
+library(lmerTest)
+df.corr = df %>% dplyr::select(-c(task, RT_steer, y_first_gaze, y_first_fix)) %>% na.omit()
+
+# Standardizing predictors (except the categorical ones like id and task)
+df.corr_standard <- df.corr %>%
+  mutate_at(vars(-id, RT_adoff), scale)
+
+
+# Prepare the formula
+fixed_effects <- names(df.corr)[!(names(df.corr) %in% c("id", "RT_adoff"))]
+formula_str <- paste("RT_adoff ~", paste(fixed_effects, collapse = " + "), "+ (1 | id)")
+formula <- as.formula(formula_str)
+print(formula
+      )
+#calculate initial model
+initial_model <- lmer(formula , data = df.corr)
+summary(initial_model)
+
+initial_model_scaled <- lmer(formula , data = df.corr_standard, na.action = na.omit)
+summary(initial_model_scaled)
+
+step_fm <- step(initial_model)
+step_fm # Display elimination results
+final_fm <- get_model(step_fm)
+
+final.model = lmer(RT_adoff ~ mean_hr_beats_min + mean_rr_ms + pupil_z + entropy_log2 + spatial_density + (1 | id), 
+                 data = df.corr)
+summary(final.model)
+
+
+```
+
+```{r}
+
+#logistic regression for correlation against big maneuver
+df.corr = df%>% dplyr::select(-c(id, task, RT_steer,y_first_gaze, y_first_fix)) 
+df.corr <- na.omit(df.corr)
+
+#sum(is.na(df.corr))
+
+
+# Load the necessary libraries
+library(MASS)
+
+# Fit a full logistic regression model with all predictors
+fullModel <- lm(RT_adoff ~ ., data = df.corr)
+
+# Summary of the full model to check initial coefficients
+summary(fullModel)
+
+# Stepwise feature selection using both directions (forward and backward)
+stepModel <- stepAIC(fullModel, direction = "both", trace = FALSE)
+
+# Summary of the stepwise model to check selected features and their coefficients
+summary(stepModel)
+```
+
+```{r}
+#logistic regression for correlation against big maneuver
+df.corr = df%>% dplyr::select(-c(id, task, RT_adoff,y_first_gaze, y_first_fix)) 
+df.corr <- na.omit(df.corr)
+
+#sum(is.na(df.corr))
+
+
+# Load the necessary libraries
+library(MASS)
+
+# Fit a full logistic regression model with all predictors
+fullModel <- lm(RT_steer ~ ., data = df.corr)
+
+# Summary of the full model to check initial coefficients
+summary(fullModel)
+
+# Stepwise feature selection using both directions (forward and backward)
+stepModel <- stepAIC(fullModel, direction = "both", trace = FALSE)
+
+# Summary of the stepwise model to check selected features and their coefficients
+summary(stepModel)
+```
+
+
+```{r}
+
+#logistic regression for correlation against big maneuver
+df.corr = df%>% dplyr::select(-c(id, task, RT_steer,RT_adoff, y_first_gaze)) 
+df.corr <- na.omit(df.corr)
+
+#sum(is.na(df.corr))
+
+
+# Load the necessary libraries
+library(MASS)
+
+# Fit a full logistic regression model with all predictors
+fullModel <- lm(y_first_fix ~ ., data = df.corr)
+
+# Summary of the full model to check initial coefficients
+summary(fullModel)
+
+# Stepwise feature selection using both directions (forward and backward)
+stepModel <- stepAIC(fullModel, direction = "both", trace = FALSE)
+
+# Summary of the stepwise model to check selected features and their coefficients
+summary(stepModel)
+```
+```{r}
+
+#logistic regression for correlation against big maneuver
+df.corr = df%>% dplyr::select(-c(id, task, RT_steer,RT_adoff, y_first_fix)) 
+df.corr <- na.omit(df.corr)
+
+#sum(is.na(df.corr))
+
+
+# Load the necessary libraries
+library(MASS)
+
+# Fit a full logistic regression model with all predictors
+fullModel <- lm(y_first_gaze ~ ., data = df.corr)
+
+# Summary of the full model to check initial coefficients
+summary(fullModel)
+
+# Stepwise feature selection using both directions (forward and backward)
+stepModel <- stepAIC(fullModel, direction = "both", trace = FALSE)
+
+# Summary of the stepwise model to check selected features and their coefficients
+summary(stepModel)
+```
+Generalized Additive Models (GAMs)
+While GAMs can be considered a bit more advanced than basic statistical models, they are highly interpretable because they model the relationship between predictors and the response variable using smooth functions. Each function's shape can give you insights into the nature of the relationship.
+
+Pros:
+
+Flexible enough to capture non-linear relationships.
+Each predictor's effect is modeled separately, enhancing interpretability.
+Cons:
+
+Requires selecting an appropriate smoothing parameter, though methods like Generalized Cross Validation (GCV) can assist with this.
+Slightly more complex than linear models, but still within the realm of basic statistics.
+
+```{r}
+library(gam)
+library(broom)
+library(tidyverse)
+
+# Assume your data is in a dataframe called df
+# Ensure 'experience' is a factor
+gam_df <- df %>% select(-c(id, task, RT_steer, y_first_gaze, y_first_fix, av_experience)) 
+
+# Create a formula for the gam model
+# Automatically create the formula string with smooth terms for all variables except 'y' and 'experience'
+predictors <- setdiff(names(gam_df), c("RT_adoff"))
+formula_gam <- as.formula(
+  paste("RT_adoff ~", paste("s(", predictors, ")", collapse=" + "))
+)
+
+
+
+# Fit the initial model
+initial_gam <- gam(formula_gam, 
+                     data = gam_df, 
+                     family = gaussian())
+
+summary(initial_gam)
+# # Get a tidy summary of the model
+# tidy_initial_gam <- tidy(initial_gam)
+# print(tidy_initial_gam)
+# 
+# # Model selection with step.gam (Note: step.gam is not a tidyverse function, but we use it within a tidyverse workflow)
+# mgcv::step_gam <- step.gam(initial_gam, scope = list(upper = formula_gam, lower = y ~ 1), direction = "backward")
+# 
+# # Get a tidy summary of the selected model
+# tidy_step_gam <- tidy(step_gam)
+# print(tidy_step_gam)
+# 
+# # Plot the effects of the selected smooth terms
+# plot(step_gam) # This is not a tidyverse plot, but integrates well with the workflow
+# 
+# # Model diagnostics
+# gam.check(step_gam) # This is not a tidyverse function, but is necessary for GAM diagnostics
+
+
+
+```
+

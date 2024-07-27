@@ -1,0 +1,496 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r, message=FALSE}
+library(tidyverse)
+library(readr)
+# directory with CSV files
+#root_dir <- "D:\\Cloud Drives\\OneDrive - purdue.edu\\Second Ford\\Year 3\\driving_data\\result\\all\\"
+#use relative path
+root_dir <- ".\\driving\\driving_raw\\"
+
+# list all CSV files
+all_csv_files <- list.files(path = root_dir, pattern = "\\.csv$", full.names = TRUE, recursive = TRUE)
+
+# read all CSV files into a list of dataframes
+list_df <- lapply(all_csv_files, function(x) {
+  df <- read_csv(x)
+  df$A <- basename(x)   # file name
+ # df$B <- dirname(x)    # directory name
+  df
+})
+
+# bind all dataframes into one
+df <- bind_rows(list_df)
+```
+
+
+```{r, message=FALSE}
+
+df.label <- df %>%
+  mutate(
+    #extract the task name from file name
+    B = str_sub(A, start = 10, end = 14),
+    # extract task letter from file name
+    task = case_when(
+      str_starts(B, "Pu") ~ "P",
+      str_starts(B, "Po") ~ "M",
+      str_starts(B, "D") ~ "D",
+      str_starts(B, "J") ~ "J",
+      str_starts(B, "W") ~ "W",
+      TRUE ~ B),
+     #extract the digits for date and time
+    date = str_extract(A, pattern = "(\\d{14})"),
+    #extract participant number, remove the letter P 
+    id = str_replace(subject, pattern = "^P", replacement = ""), 
+    #correct column type
+    task = as.factor(task),
+    id = as.numeric(id),
+    date = as.numeric(date)
+  )
+str(df.label)
+```
+
+```{r}
+# extract transition key moments: start, end TOR change, AD state change
+key_moment_raw <- df.label %>%
+              arrange(id, task) %>%
+              group_by(id, task) %>%
+              mutate(
+              log_change = stream_1 != lag(stream_1, default = stream_1[1]),
+              AD_change = AD_State != lag(AD_State, default = AD_State[1]),
+              start = Frame == min(Frame),
+              end = Frame == max(Frame)
+                   ) %>%
+              filter(log_change | AD_change | start | end) %>% 
+              select(id, task, Frame, stream_1, AD_State)
+
+key_moment_clean <- df.label %>%
+              arrange(id, task) %>%
+              group_by(id, task) %>%
+              mutate(
+              log_change = stream_1 != lag(stream_1, default = stream_1[1]),
+              AD_change = AD_State != lag(AD_State, default = AD_State[1]),
+              start = Frame == min(Frame),
+              end = Frame == max(Frame)
+                   ) %>%
+              filter(log_change | AD_change | start | end) %>% filter(
+    ((stream_1 == 7 & AD_State == 0 & lead(stream_1) == 8 & lead(AD_State) == 0 & lead(stream_1, 2) == 8 & lead(AD_State, 2) == 1) |
+    (lag(stream_1) == 7 & lag(AD_State) == 0 & stream_1 == 8 & AD_State == 0 & lead(stream_1) == 8 & lead(AD_State) == 1) |
+    (lag(stream_1, 2) == 7 & lag(AD_State, 2) == 0 & lag(stream_1) == 8 & lag(AD_State) == 0 & stream_1 == 8 & AD_State == 1)) | start |end | lag(stream_1, default = stream_1[1]) == 0 & stream_1 == 7) %>% 
+              group_by(id, task) %>% 
+              mutate(label = row_number()) %>% 
+              select(id, task, Frame, label) %>% pivot_wider(names_from = label, values_from = Frame)
+```
+
+```{r}
+# Export the data frame to a CSV file
+#write_csv(key_moment_raw, "keymoment_raw.csv")
+#write_csv(df.label, "year3_driving_all.csv")
+#write_csv(steer_angle, "steering.csv")
+#write_csv(df.check, "check.csv")
+#write_csv(acc_position, "gas.csv")
+write_csv(driving.label, "videocap_label.csv")
+
+```
+
+```{r}
+df.check <- longitudinal_data %>% filter_at(vars(starts_with("veh_speed")), any_vars(is.na(.)))
+```
+
+```{r}
+
+
+
+
+# calculate RT_by steering angle 
+
+steer_angle = df.label %>% 
+              group_by(id, task) %>% 
+              filter(stream_1 >=7) %>%
+  #use the steerhing angle at TOR1 as reference
+              mutate(initial_angle = first(Steering_Angle)) %>%
+              filter(abs(Steering_Angle-initial_angle)>=2) %>% 
+              summarise(T_steer = first(Frame))
+
+header <- steer_angle%>%
+          select(id, task) 
+
+acc_position = df.label %>% 
+              group_by(id, task) %>% 
+              filter(stream_1 >=7) %>%
+  #use the steerhing angle at TOR1 as reference
+              filter(Acc_Position >=0.03) %>% 
+              summarise(T_gas = first(Frame)) %>% 
+              full_join(header, by = c("id", "task")) %>% 
+              arrange(id,task)
+              
+              
+```
+```{r}
+#file names
+driving.label <- df.label %>% 
+  select(id,task,date) %>%  
+  distinct(task, date, id, .keep_all = TRUE) %>% 
+  mutate(filename = paste0(as.character(date), "VCAP1.mp4")) %>% 
+  arrange(id,task) %>% 
+  rename(`timestamp` = date) %>% 
+    mutate(
+    date = stringr::str_sub(as.character(timestamp), 5, 8), # Extract MMDD
+    time = stringr::str_c(
+      stringr::str_sub(as.character(timestamp), 9, 10), ":",  # Extract HH
+      stringr::str_sub(as.character(timestamp), 11, 12), ":", # Extract MM
+      stringr::str_sub(as.character(timestamp), 13, 14)       # Extract SS
+    )
+  )
+str(driving.label)
+```
+
+## Genrate Driving Trajectory
+```{r}
+driving.df = read_csv(".\\driving\\year3_driving_all.csv") %>% select(id, task, Frame, veh_speed, time_to_col, b2b_time, b2b_distance, offset, lane_id)
+str(driving.df)
+```
+Now read in the RT file for key moments
+```{r}
+key_moments = read_csv(".\\RT.csv") %>% select(id, task, TOR1, AD_off, AD_on)
+str(key_moments)
+
+```
+
+
+## calculate lane position 
+```{r}
+library(signal)
+library(zoo)
+
+interpolate_na <- function(x) {
+  if (all(is.na(x))) {
+    return(x)  # return as is if all values are NA
+  }
+  na.approx(x, rule = 2)
+}
+
+lane_position = driving.df %>% dplyr::select(id, task, Frame, offset, lane_id) %>% mutate(id = as.numeric(id)) %>% 
+  #adjust lane position to one coordinate, regardless of lane number 
+    mutate(offset_adj = case_when(lane_id == 0 ~ 6-offset,
+                                  lane_id == 1 ~ (6-offset)+12,
+                                  lane_id == 2 ~ (6-offset)+24)) %>% 
+    group_by(id, task) %>%
+  #interpolate NA values
+    mutate(across(4, interpolate_na)) %>%
+  #apply  Savitzky-Golay filter to smooth out data (window 0.5s)
+    mutate(offset_adj_filt = sgolayfilt(offset_adj, p = 3, n = 31)) %>%  # p is the polynomial order3, window length 0.5 seconds (30 frames),
+  #include key moment TOR1 for data truncation TOR1 - TOR1+15
+    left_join(key_moments, by = c("id", "task")) %>% 
+    mutate(frame_adj= Frame-TOR1) %>% 
+    dplyr::filter(frame_adj>=0 & frame_adj<900)
+
+#str(lane_position)
+
+longitudinal_data = driving.df %>% dplyr::select(id, task, Frame, veh_speed, time_to_col,b2b_time, b2b_distance) %>% 
+  mutate(id = as.numeric(id)) %>%
+    #include key moment TOR1 for data truncation TOR1 - TOR1+15
+    left_join(key_moments, by = c("id", "task")) %>% 
+    mutate (speed_ft = veh_speed * 5280 / 3600) %>% 
+    group_by(id, task) %>% 
+  #interpolate NA values (colum 9, speed_ft)
+    mutate(across(9, interpolate_na)) %>%
+   #filter vehicle speed data 
+    mutate(speed_ft_filt = sgolayfilt(speed_ft, p = 2, n = 61)) %>%  # p is the polynomial order2, window length 1 seconds (60 frames),
+    mutate(frame_adj= Frame-TOR1) %>% 
+    dplyr::filter(frame_adj>=0 & frame_adj<900)
+```
+
+
+## Visualize Savitzky-Golay data filtering results 
+
+```{r}
+#visualise filtering result 
+str(df_filter)
+df_filtered = lane_position %>% dplyr::filter(task == "D") %>% dplyr::filter(id == 10)
+ggplot(df_filtered, aes(x = frame_adj)) +
+  geom_line(aes(y =  offset_adj), color = 'blue', alpha = 0.5) +
+  #geom_line(aes(y =  offset_adj_filt), color = 'red') +
+  theme_minimal() +
+  labs(title = "Savitzky-Golay Filter", x = "frame", y = "lane_offset")
+
+#visualise filtering result 
+str(df_filter)
+df_filtered = longitudinal_data %>% dplyr::filter(task == "D") %>% dplyr::filter(id == 10)
+ggplot(df_filtered, aes(x = frame_adj)) +
+  geom_line(aes(y =  speed_ft_filt), color = 'blue', alpha = 0.5) +
+  #geom_line(aes(y =  offset_adj_filt), color = 'red') +
+  theme_minimal() +
+  labs(title = "Savitzky-Golay Filter", x = "frame", y = "lane_offset")
+```
+
+## calculate longitudinal and lateral jerk and acceleration
+```{r}
+#observation use 0.3s = 18 frames following Feng et al. 2017
+longitudinal.acc <- longitudinal_data %>%
+  arrange(id, task, frame_adj) %>%
+  group_by(id, task) %>%
+  mutate(
+    long_acc = if_else(row_number() >= 18, (speed_ft_filt - lag(speed_ft_filt, 18)) / 1, NA_real_), # acceleration in ft/s^2
+    long_jerk = if_else(row_number() >= 36, (long_acc - lag(long_acc, 18)) / 1, NA_real_) #jerk in ft/s^3
+  ) %>%
+  ungroup() %>% 
+  select(id, task, frame_adj, speed_ft_filt, long_acc, long_jerk)
+
+#calculate lateral speed and acceleration
+lateral.acc <- lane_position %>%
+  arrange(id, task, frame_adj) %>%
+  group_by(id, task) %>%
+  mutate(
+    lat_speed = if_else(row_number() >= 18, (offset_adj_filt - lag(offset_adj_filt, 18)) / 1, NA_real_), # velocity in ft/s
+    lat_acc = if_else(row_number() >= 36, (lat_speed - lag(lat_speed, 18)) / 1, NA_real_), # acceleration in ft/s^2
+    lat_jerk = if_else(row_number() >= 54, (lat_acc - lag(lat_acc, 18)) / 1, NA_real_) # acceleration in ft/s^2
+  ) %>%
+  ungroup() %>% 
+  select(id, task, frame_adj, lat_speed,  lat_acc, lat_jerk)
+
+acceleration.df = longitudinal.acc %>% left_join(lateral.acc, by = c("id", "task", "frame_adj"))
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(plotly)
+# Consolidating lines and computing confidence interval
+consolidated_data <- lane_position %>%
+  group_by(task, frame_adj) %>%
+  dplyr::summarise(mean_offset = mean(offset_adj_filt),
+            lower_ci = mean(offset_adj_filt) - sd(offset_adj_filt)/sqrt(n()),
+            upper_ci = mean(offset_adj_filt) + sd(offset_adj_filt)/sqrt(n()))
+
+# Plotting consolidated lines with confidence intervals
+consolidated_plot <- ggplot(consolidated_data, aes(x = frame_adj, y = mean_offset, color = task, fill = task)) +
+  #highlight lane border lines
+  geom_hline(yintercept=12, color = "black", size = 1)+
+  geom_hline(yintercept=0, color = "black", size = 1)+
+  geom_hline(yintercept=24, color = "black", size = 1)+
+  #highlight zone for lane change duration calculation
+  geom_hline(yintercept=8, linetype="dashed", color = "red")+
+  geom_hline(yintercept=16, linetype="dashed", color = "red")+
+  geom_line() +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.3) +
+  labs(title = "Lane_Offset by Task", color = "Task") +
+  theme_minimal()
+
+# Displaying the consolidated plot
+ggplotly(consolidated_plot)
+```
+
+
+
+
+
+```{r}
+# creating individual plot 
+df = lane_position %>% dplyr::filter(task == "D")
+
+# Calculate mean offset for each frame
+mean_offsets <- consolidated_data %>% dplyr::filter(task == "D")
+
+#extend color palette
+library(RColorBrewer)
+# Define the number of colors you want
+nb.cols <- 46
+mycolors <- colorRampPalette(brewer.pal(8, "Blues"))(nb.cols)
+
+D<- ggplot(df, aes(x = frame_adj, y = offset_adj_filt, color = as.factor(id))) +
+    geom_line(aes(alpha = 0.5)) +
+    labs(title = "Driving Trajectory for Driving-Only Condition") +
+    geom_line(data = mean_offsets, aes(x = frame_adj, y = mean_offset), color = "red", size = 1) +
+    scale_fill_manual(values = mycolors) +
+    theme_minimal() 
+  
+
+
+ggplotly(D)
+```
+
+```{r}
+
+
+# creating individual plot 
+df = lane_position %>% dplyr::filter(task == "P")
+
+# Calculate mean offset for each frame
+mean_offsets <- consolidated_data %>% dplyr::filter(task == "P")
+
+
+
+P<- ggplot(df, aes(x = frame_adj, y = offset_adj_filt, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "Driving Trajectory for Puzzle Condition") +
+    geom_line(data = mean_offsets, aes(x = frame_adj, y = mean_offset), color = "red", size = 1) +
+    theme_minimal() 
+  
+
+
+ggplotly(P)
+```
+
+
+```{r}
+
+
+# creating individual plot 
+df = lane_position %>% dplyr::filter(task == "J")
+
+# Calculate mean offset for each frame
+mean_offsets <- consolidated_data %>% dplyr::filter(task == "J")
+
+
+
+J<- ggplot(df, aes(x = frame_adj, y = offset_adj_filt, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "Driving Trajectory for Jigsaw Condition") +
+    geom_line(data = mean_offsets, aes(x = frame_adj, y = mean_offset), color = "red", size = 1) +
+    theme_minimal() 
+  
+
+
+ggplotly(J)
+```
+```{r}
+
+
+# creating individual plot 
+df = lane_position %>% dplyr::filter(task == "W")
+
+# Calculate mean offset for each frame
+mean_offsets <- consolidated_data %>% dplyr::filter(task == "W")
+
+
+
+W<- ggplot(df, aes(x = frame_adj, y = offset_adj_filt, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "Driving Trajectory for Word Condition") +
+    geom_line(data = mean_offsets, aes(x = frame_adj, y = mean_offset), color = "red", size = 1) +
+    theme_minimal() 
+  
+
+
+ggplotly(W)
+```
+```{r}
+
+
+# creating individual plot 
+df = lane_position %>% dplyr::filter(task == "M")
+
+# Calculate mean offset for each frame
+mean_offsets <- consolidated_data %>% dplyr::filter(task == "M")
+
+
+
+M<- ggplot(df, aes(x = frame_adj, y = offset_adj_filt, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "Driving Trajectory for Poem Condition") +
+    geom_line(data = mean_offsets, aes(x = frame_adj, y = mean_offset), color = "red", size = 1) +
+    theme_minimal() 
+  
+
+
+ggplotly(M)
+```
+
+
+
+```{r}
+#lane change duration calculation
+#str(lane_position)
+#calculate lateral speed and acceleration
+acceleration_data <- lane_position %>%
+  arrange(id, task, frame_adj) %>%
+  group_by(id, task) %>%
+  mutate(
+    velocity = if_else(row_number() >= 60, (offset_adj_filt - lag(offset_adj_filt, 60)) / 1, NA_real_), # velocity in ft/s
+    acceleration = if_else(row_number() >= 120, (velocity - lag(velocity, 60)) / 1, NA_real_) # acceleration in ft/s^2
+  ) %>%
+  ungroup()
+
+P<- ggplot(acceleration_data, aes(x = frame_adj, y = acceleration, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "lateral acceleration") +
+    theme_minimal() 
+#ggplotly(P)
+
+
+# If you want to summarize the maximum acceleration for each group
+max_acceleration <- acceleration_data %>%
+  group_by(id, task) %>%
+  summarize(max_acceleration = max(acceleration, na.rm = TRUE))
+
+
+#cauculate resume time 
+AD_resume = key_moments %>% 
+  group_by(id, task) %>% 
+  mutate(ad_resume = AD_on - AD_off) %>% 
+  select(id, task, ad_resume)
+
+longitudinal = longitudinal_data %>% 
+  #calcualte TTC
+  mutate(
+    speed_ft_s = veh_speed * 5280 / 3600, # Convert speed from mph to ft/s
+    ttc = b2b_distance / speed_ft_s # Calculate Time to Collision in seconds
+  ) %>% 
+  group_by(id, task) %>% 
+  summarise(min_speed = min(veh_speed),
+         min_TTC = min(b2b_time[b2b_time > 0], na.rm = TRUE))
+
+lateral = lane_position %>%
+  group_by(id, task) %>%
+  dplyr::summarize(
+    start_frame = first(frame_adj[offset_adj_filt >= 8]),
+    end_frame = first(frame_adj[offset_adj_filt >= 16]),
+    lane_change_duration = if_else(!is.na(start_frame) & !is.na(end_frame), (end_frame - start_frame)/60, NA_real_), 
+    max_lane_position = max(offset_adj_filt)
+  ) %>% 
+  left_join(max_acceleration, by = c("id", "task")) %>% 
+  left_join(AD_resume, by = c("id", "task"))
+
+
+driving_summary = AD_resume %>% left_join(longitudinal, by = c("id", "task")) %>% left_join(lateral, by = c("id", "task"))
+```
+
+```{r}
+#visualise headway
+M<- ggplot(longitudinal_data %>% dplyr::filter(task == "M"), aes(x = frame_adj, y = b2b_distance, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "b2b_distance") +
+    geom_line(data = mean_offsets, aes(x = frame_adj, y = mean_offset), color = "red", size = 1) +
+    theme_minimal() 
+  
+
+
+ggplotly(M)
+```
+
+```{r}
+driving_position = read_csv(".\\driving_position.csv") %>% select(id, task, min_headway)
+driving.output = driving_summary %>% left_join(driving_position, by = c("id", "task"))
+```
+
+
+```{r}
+write_csv(driving_summary, "driving_summary.csv")
+```
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

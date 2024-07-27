@@ -1,0 +1,288 @@
+---
+title: "driving_position"
+output: html_notebook
+---
+
+This file focuses on the VDS_chassis_CG_position variable, using particular coordinates of the objects in the scerario to derive location, min_distance etc. 
+the location of the first cone is (-5393.49, 7644.40)
+
+```{r,message=FALSE}
+#read in position files
+library(tidyverse)
+library(readr)
+# directory with CSV files
+
+#use relative path
+root_dir <- ".\\driving\\driving_position\\"
+
+# list all CSV files
+all_csv_files <- list.files(path = root_dir, pattern = "\\.csv$", full.names = TRUE, recursive = TRUE)
+
+# read all CSV files into a list of dataframes
+list_df <- lapply(all_csv_files, function(x) {
+  df <- read_csv(x)
+  df$filename <- basename(x)   # file name
+ # df$B <- dirname(x)    # directory name
+  df
+})
+
+# bind all dataframes into one
+driving_position.raw <- bind_rows(list_df)
+```
+
+
+## Clean and label data
+
+```{r, message=FALSE}
+#str(driving_position.raw)
+driving_position.label <- driving_position.raw %>%
+  mutate(
+    #extract the task name from file name
+    B = str_sub(filename, start = 10, end = 14),
+    # extract task letter from file name
+    task = case_when(
+      str_starts(B, "Pu") ~ "P",
+      str_starts(B, "Po") ~ "M",
+      str_starts(B, "D") ~ "D",
+      str_starts(B, "J") ~ "J",
+      str_starts(B, "W") ~ "W",
+      TRUE ~ B),
+    #extract participant number, remove the letter P 
+    id = str_replace(subject, pattern = "^P", replacement = ""), 
+    #correct column type
+    task = as.factor(task),
+    id = as.numeric(id)
+  ) %>% select(id, task, Frame, CG_x, CG_y)
+str(driving_position.label)
+```
+
+```{r}
+#check = driving_position.label %>% filter(is.na(CG_y))
+#get TOR1 frame number 
+library(tidyverse)
+key_moments = read_csv(".\\RT.csv") %>% select(id, task, TOR1)
+
+#define cone location (reference location after adjusting for the car dimension)
+fixed_point_x <- -5398.85
+fixed_point_y <- 7647.40 # near the center of the ego lane
+
+
+#calculate the dataframe that contains the frame where the cross of borderline took place
+distance_cone = driving_position.label %>% 
+  left_join(key_moments, by = c("id", "task")) %>% 
+  mutate(frame_adj = Frame-TOR1) %>%
+  filter(frame_adj>=0 & frame_adj<900) %>% 
+  group_by(id, task) %>% 
+  #calculate distance to first cone 
+  mutate(distance = sqrt((CG_x - fixed_point_x)^2 + (CG_y - fixed_point_y)^2)) %>% 
+  # x is on the roadway direction, we now calculate the x distance between vehicle and cone when the vehicle center line is 3 feet to the left of the cone, suggesting an avoidance
+  arrange(frame_adj) %>%  # Ensures that we consider the points in the order of increasing y values (to right side is increase)
+  filter(CG_y <= (fixed_point_y-2)) %>%  # Keep only the points where y is below the threshold (half car wide to the left, being able to avoid collision)
+  slice(1) %>% 
+  # Keep only the first point that meets the condition
+  mutate(x_distance =  fixed_point_x - CG_x ) %>% 
+  # in cases where the driver hit the cone, set value to 0 
+  mutate(min_headway = ifelse(x_distance < 0, 0, x_distance))
+
+
+#clean up the vehicle trajectory 
+trajectory.df = driving_position.label %>% 
+  left_join(key_moments, by = c("id", "task")) %>% 
+  mutate(frame_adj = Frame-TOR1) %>%
+  filter(frame_adj>=0 & frame_adj<900) %>% 
+  group_by(id, task) %>% 
+  mutate(y_adj = -(CG_y - fixed_point_y),
+         x_adj = CG_x - fixed_point_x)
+  # 
+
+```
+
+#Now extract the vehcicle speed at the time the cross took place to calculate TTC
+```{r}
+library(tidyverse)
+#first read in the raw driving data (not directly available in repo)
+veh_speed.df = read_csv(".\\driving\\year3_driving_all.csv") %>% select(id, task, Frame, veh_speed)%>% mutate(id = as.numeric(id))
+
+
+TTC.df = distance_cone %>% mutate(id = as.numeric(id)) %>% select(id, task, Frame, min_headway) %>% left_join(veh_speed.df, by = c("id", "task", "Frame")) %>% mutate(min_TTC = min_headway/(veh_speed * (5280/3600)))
+```
+
+
+
+# Now plot trajectory data
+```{r}
+library(plotly)
+library(RSelenium)#for higher resolution
+#draw position trajectory 
+# Consolidating lines and computing confidence interval
+consolidated_data <- trajectory.df %>%
+  group_by(task, frame_adj) %>%
+  dplyr::summarise(mean_x = mean(x_adj),
+                   mean_y = mean(y_adj),
+                   se_x = sd(x_adj)/sqrt(n()),
+                   se_y = sd(y_adj)/sqrt(n()))
+
+# Plotting consolidated lines with confidence intervals
+consolidated_plot <- ggplot(consolidated_data, aes(x = mean_x, y = mean_y, color = task, fill = task)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = mean_y-se_y, ymax = mean_y+se_y), alpha = 0.3) +
+  labs(title = "Trajectory by Task", color = "Task") +
+  #draw the position of the cone 
+  theme_minimal()
+
+# Displaying the consolidated plot
+ggplotly(consolidated_plot)
+
+ggsave(path = ".\\image",filename = "trajectory_mean.svg", width = 12, height = 6, device='svg', dpi=400)
+```
+
+```{r}
+# creating individual plot 
+df = trajectory.df%>% dplyr::filter(task == "P")
+
+# Calculate mean offset for each frame
+mean_offsets <- consolidated_data %>% dplyr::filter(task == "P")
+
+
+
+P<- ggplot(df, aes(x = x_adj, y = y_adj, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "Driving Trajectory for Puzzle Condition") +
+    geom_line(data = mean_offsets, aes(x = mean_x, y = mean_y), color = "#0575f6", size = 2) +
+    ylim(-6,24)+
+    theme_minimal() 
+  
+
+
+ggplotly(P)
+ggsave(path = ".\\image",filename = "trajectory_puzzle.svg", width = 12, height = 6, device='svg', dpi=400)
+
+#########################################
+
+# creating individual plot 
+df = trajectory.df%>% dplyr::filter(task == "D")
+
+# Calculate mean offset for each frame
+mean_offsets <- consolidated_data %>% dplyr::filter(task == "D")
+
+
+
+D<- ggplot(df, aes(x = x_adj, y = y_adj, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "Driving Trajectory for Drive Condition") +
+    geom_line(data = mean_offsets, aes(x = mean_x, y = mean_y), color = "#f8786e", size = 2) +
+    ylim(-6,24)+
+    theme_minimal() 
+  
+
+
+ggplotly(D)
+ggsave(path = ".\\image",filename = "trajectory_drive.svg", width = 12, height = 6, device='svg', dpi=400)
+
+#########################################
+
+# creating individual plot 
+df = trajectory.df%>% dplyr::filter(task == "J")
+
+# Calculate mean offset for each frame
+mean_offsets <- consolidated_data %>% dplyr::filter(task == "J")
+
+
+
+J<- ggplot(df, aes(x = x_adj, y = y_adj, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "Driving Trajectory for Jigsaw Condition") +
+    geom_line(data = mean_offsets, aes(x = mean_x, y = mean_y), color = "#a7a90b", size = 2) +
+    ylim(-6,24)+
+    theme_minimal() 
+  
+
+
+ggplotly(J)
+ggsave(path = ".\\image",filename = "trajectory_jigsaw.svg", width = 12, height = 6, device='svg', dpi=400)
+
+#########################################
+# creating individual plot 
+df = trajectory.df%>% dplyr::filter(task == "W")
+
+# Calculate mean offset for each frame
+mean_offsets <- consolidated_data %>% dplyr::filter(task == "W")
+
+
+
+W<- ggplot(df, aes(x = x_adj, y = y_adj, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "Driving Trajectory for Letter Condition") +
+    geom_line(data = mean_offsets, aes(x = mean_x, y = mean_y), color = "#e76ff3", size = 2) +
+    ylim(-6,24)+
+    theme_minimal() 
+
+ggplotly(W)
+ggsave(path = ".\\image",filename = "trajectory_letter.svg", width = 12, height = 6, device='svg', dpi=400) 
+##########################################
+
+# creating individual plot 
+df = trajectory.df%>% dplyr::filter(task == "M")
+
+# Calculate mean offset for each frame
+mean_offsets <- consolidated_data %>% dplyr::filter(task == "M")
+
+
+
+M<- ggplot(df, aes(x = x_adj, y = y_adj, color = as.factor(id))) +
+    geom_line(alpha = 0.5) +
+    labs(title = "Driving Trajectory for Poem Condition") +
+    geom_line(data = mean_offsets, aes(x = mean_x, y = mean_y), color = "#00bf7d", size = 2) +
+    ylim(-6,24)+
+    theme_minimal() 
+
+ggplotly(M)
+ggsave(path = ".\\image",filename = "trajectory_poem.svg", width = 12, height = 6, device='svg', dpi=400) 
+
+
+```
+
+
+```{r}
+#use TTC.df as the output df, as it contains everything needed.
+output.df <- TTC.df
+```
+
+
+```{r}
+write_csv(output.df, "driving_position.csv")
+```
+
+
+## plot distance overtime 
+```{r}
+library(dplyr)
+library(ggplot2)
+library(plotly)
+# Consolidating lines and computing confidence interval
+consolidated_data <- distance_cone %>%
+  group_by(task, frame_adj) %>%
+  dplyr::summarise(mean_distance = mean(distance_x),
+            lower_ci = mean(distance_x) - sd(distance_x)/sqrt(n()),
+            upper_ci = mean(distance_x) + sd(distance_x)/sqrt(n()))
+
+# Plotting consolidated lines with confidence intervals
+consolidated_plot <- ggplot(consolidated_data, aes(x = frame_adj, y = mean_distance, color = task, fill = task)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.3) +
+  labs(title = "distance to obstacle by Task", color = "Task") +
+  theme_minimal()
+
+# Displaying the consolidated plot
+ggplotly(consolidated_plot)
+```
+
+
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

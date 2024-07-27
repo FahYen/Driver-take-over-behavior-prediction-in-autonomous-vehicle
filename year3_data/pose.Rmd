@@ -1,0 +1,244 @@
+---
+title: "pose estimation"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r, message=FALSE}
+library(tidyverse)
+library(readr)
+# directory with CSV files
+root_dir <- ".\\pose_coordinate"
+
+# list all CSV files
+all_csv_files <- list.files(path = root_dir, pattern = "\\.csv$", full.names = TRUE, recursive = TRUE)
+
+# read all CSV files into a list of dataframes
+list_df <- lapply(all_csv_files, function(x) {
+  df <- read_csv(x)
+  df$filename <- basename(x)   # file name
+ # df$B <- dirname(x)    # directory name
+  df
+})
+
+# bind all dataframes into one
+df <- bind_rows(list_df)
+```
+
+
+clean data 
+```{r, message=FALSE}
+library(janitor)
+library(zoo)
+
+# Define a function to remove brackets
+remove_brackets <- function(x) gsub("\\[|\\]", "", x)
+
+
+df.label <- df %>% clean_names(., "snake") %>% 
+  mutate(
+    id = str_extract(filename, "(?<=_)[0-9]{1,2}"),
+    task = str_extract(filename, "(?<=_)[0-9]{1,2}(.)")
+  ) %>%
+  mutate(
+    task = str_sub(task, nchar(id) + 1, nchar(id) + 1)
+  ) %>% dplyr::select(-c(filename)) %>% dplyr::select(id, task, frame, right_eye, right_ear, right_wrist) %>%  
+  mutate(across(c("right_eye", "right_ear", "right_wrist"), remove_brackets)) %>% 
+# Separate each coordinate column into two separate columns
+  separate(right_eye, into = c("right_eye_x", "right_eye_y"), sep = ", ", convert = TRUE) %>%
+  separate(right_ear, into = c("right_ear_x", "right_ear_y"), sep = ", ", convert = TRUE) %>%
+  separate(right_wrist, into = c("right_wrist_x", "right_wrist_y"), sep = ", ", convert = TRUE)
+
+```
+
+```{r, message= FALSE}
+# Define a function to handle the interpolation, including edge cases with NAs at the beginning or end
+interpolate_na <- function(x) {
+  if (all(is.na(x))) {
+    return(x)  # return as is if all values are NA
+  }
+  na.approx(x, rule = 2)
+}
+
+library(signal)
+
+str(df.label)
+# Apply the function to each column within each group
+df_interp <- df.label %>%
+  group_by(id, task) %>%
+  mutate(across(2:7, interpolate_na)) %>%
+  ungroup()
+
+#apply  Savitzky-Golay filter to smooth out data
+df_filter <- df_interp %>% 
+    mutate(
+    right_wrist_x_filt = sgolayfilt(right_wrist_x, p = 3, n = 31), # p is the polynomial order3, window length 3 seconds (30 frames),
+    right_wrist_y_filt = sgolayfilt(right_wrist_y, p = 3, n = 31),
+    right_eye_x_filt = sgolayfilt(right_eye_x, p = 3, n = 31),
+    right_eye_y_filt = sgolayfilt(right_eye_y, p = 3, n = 31),
+  )
+
+df_filter_2 <- df_interp %>% 
+    mutate(
+    right_wrist_x_filt = sgolayfilt(right_wrist_x, p = 3, n = 31), # p is the polynomial order3, window length 3 seconds (90 frames),
+    right_wrist_y_filt = sgolayfilt(right_wrist_y, p = 3, n = 31),
+    right_eye_x_filt = sgolayfilt(right_eye_x, p = 3, n = 31),
+    right_eye_y_filt = sgolayfilt(right_eye_y, p = 3, n = 31),
+  )
+```
+
+```{r}
+library(plotly)
+#visualise filtering result 
+str(df_filter)
+df_filtered = df_filter %>% dplyr::filter(task == "D") %>% dplyr::filter(id == 10)
+filter_plot <- ggplot(df_filtered, aes(x = frame/60)) +
+  geom_line(aes(y =  right_wrist_x), color = 'blue', alpha = 0.5) +
+  geom_line(aes(y =  right_wrist_x_filt), color = 'red', size = 1) +
+  theme_minimal() +
+  labs(title = "Savitzky-Golay Filter", x = "frame", y = " Wrist Position (x)")
+
+ggplotly(filter_plot)
+ggsave(path = ".\\image",filename = "filter_plot.svg", width = 12, height = 6, device='svg', dpi=400)
+
+```
+
+
+```{r}
+#plot 
+distance = df_filter %>% dplyr::select(id, task, frame, right_wrist_x_filt, right_wrist_y_filt, right_eye_x_filt, right_eye_y_filt) %>% 
+  group_by(id, task) %>%
+  mutate(max_frame = max(frame)) %>%
+  ungroup() %>%
+  left_join(df_filter %>% dplyr::select(id, task, frame, right_wrist_x_filt, right_wrist_y_filt, right_eye_x_filt, right_eye_y_filt), by = c("id", "task", "max_frame" = "frame")) %>% 
+  mutate(hand_dist = sqrt((right_wrist_x_filt.x - right_wrist_x_filt.y)^2 + (right_wrist_y_filt.x - right_wrist_y_filt.y)^2), 
+         eye_dist = sqrt((right_eye_x_filt.x - right_eye_x_filt.y)^2 + (right_eye_y_filt.x - right_eye_y_filt.y)^2)) %>% 
+  dplyr::select(id, task, frame, hand_dist, eye_dist)  
+
+#longe smoothing window
+distance_2 = df_filter_2 %>% dplyr::select(id, task, frame, right_wrist_x_filt, right_wrist_y_filt, right_eye_x_filt, right_eye_y_filt) %>% 
+  group_by(id, task) %>%
+  mutate(max_frame = max(frame)) %>%
+  ungroup() %>%
+  left_join(df_filter %>% dplyr::select(id, task, frame, right_wrist_x_filt, right_wrist_y_filt, right_eye_x_filt, right_eye_y_filt), by = c("id", "task", "max_frame" = "frame")) %>% 
+  mutate(hand_dist = sqrt((right_wrist_x_filt.x - right_wrist_x_filt.y)^2 + (right_wrist_y_filt.x - right_wrist_y_filt.y)^2), 
+         eye_dist = sqrt((right_eye_x_filt.x - right_eye_x_filt.y)^2 + (right_eye_y_filt.x - right_eye_y_filt.y)^2)) %>% 
+  dplyr::select(id, task, frame, hand_dist, eye_dist)  
+ 
+distance.A = distance %>% 
+ #only contain it in observation A
+  dplyr::filter(frame <= 900)
+
+distance.B = distance_2 %>% dplyr::filter(frame > 900 & frame <=1100)
+  
+```
+
+```{r}
+#five seperate plots
+
+library(ggplot2)
+library(plotly)
+#library(gapminder)
+
+# Creating individual plots
+ test<-  ggplot(distance%>% dplyr::filter(task == "M"), aes(x = frame, y = hand_dist, color = as.factor(id))) +
+    geom_line() +
+    labs(title = "Task D") +
+    theme_minimal()
+
+ggplotly(test)
+
+
+```
+```{r}
+#hand distance
+# Consolidating lines and computing confidence interval
+consolidated_data <- distance.A %>%
+  group_by(task, frame) %>%
+  summarise(mean_hand_dist = mean(hand_dist),
+            lower_ci = mean(hand_dist) - sd(hand_dist)/sqrt(n()),
+            upper_ci = mean(hand_dist) + sd(hand_dist)/sqrt(n()))
+
+# Plotting consolidated lines with confidence intervals
+consolidated_plot <- ggplot(consolidated_data, aes(x = frame, y = mean_hand_dist, color = task, fill = task)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.3) +
+  labs(title = "Hand Distance to Steeringwheel by Task", color = "Task") +
+  theme_minimal()
+
+# Displaying the consolidated plot
+ggplotly(consolidated_plot)
+
+#hand distance
+# Consolidating lines and computing confidence interval
+consolidated_data <- distance.B %>%
+  group_by(task, frame) %>%
+  summarise(mean_hand_dist = mean(hand_dist),
+            lower_ci = mean(hand_dist) - sd(hand_dist)/sqrt(n()),
+            upper_ci = mean(hand_dist) + sd(hand_dist)/sqrt(n()))
+
+# Plotting consolidated lines with confidence intervals
+consolidated_plot_B <- ggplot(consolidated_data, aes(x = frame, y = mean_hand_dist, color = task, fill = task)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.3) +
+  labs(title = "Hand Distance to Steeringwheel by Task", color = "Task") +
+  theme_minimal()
+
+# Displaying the consolidated plot
+ggplotly(consolidated_plot_B)
+```
+
+```{r}
+#eye_distance
+# Consolidating lines and computing confidence interval
+consolidated_data <- distance.A %>%
+  group_by(task, frame) %>%
+  summarise(mean_eye_dist = mean(eye_dist),
+            lower_ci = mean(eye_dist) - sd(eye_dist)/sqrt(n()),
+            upper_ci = mean(eye_dist) + sd(eye_dist)/sqrt(n()))
+
+# Plotting consolidated lines with confidence intervals
+consolidated_plot <- ggplot(consolidated_data, aes(x = frame, y = mean_eye_dist, color = task, fill = task)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.3) +
+  labs(title = "Right Eye Distance with Confidence Intervals by Task", color = "Task") +
+  theme_minimal()
+
+# Displaying the consolidated plot
+ggplotly(consolidated_plot)
+
+# Consolidating lines and computing confidence interval
+consolidated_data <- distance.B %>%
+  group_by(task, frame) %>%
+  summarise(mean_eye_dist = mean(eye_dist),
+            lower_ci = mean(eye_dist) - sd(eye_dist)/sqrt(n()),
+            upper_ci = mean(eye_dist) + sd(eye_dist)/sqrt(n()))
+
+# Plotting consolidated lines with confidence intervals
+consolidated_plot_2 <- ggplot(consolidated_data, aes(x = frame, y = mean_eye_dist, color = task, fill = task)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lower_ci, ymax = upper_ci), alpha = 0.3) +
+  labs(title = "Right Eye Distance with Confidence Intervals by Task", color = "Task") +
+  theme_minimal()
+
+# Displaying the consolidated plot
+ggplotly(consolidated_plot_2)
+```
+```{r}
+#mean distance 
+mean_distance = distance.A %>% group_by(id, task) %>% summarise(mean_hand = mean(hand_dist), mean_eye = mean(eye_dist))
+```
+```{r}
+write.csv(mean_distance,file = "pose_mean.csv", row.names = FALSE)
+```
+
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.

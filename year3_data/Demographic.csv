@@ -1,0 +1,47 @@
+id,name,gender,age,years,annual_mile,Q25,daily,Q31,av_experience,trust_a,trust_l,trust_al,trust_auto
+2,Lauren Lamb,Female,22,6,2,15 min. or less,1,No,0,4,4,4,3
+3,Julia Sibley,Female,45,27,1,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Departure Warning,Forward Collision Warning",1,3,3,3,3
+7,Cloris Chen,Female,25,2,2,15 min. or less,1,No,0,3,3,2,2
+11,Jing Yang,Female,28,4,2,16 - 30 min.,2,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,3,3,3,2
+12,Kris Laferriere,Female,25,8,2,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA)",2,2,3,2,2
+20,Jaeeun Kim,Female,24,1,2,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,4,3,3,3
+21,Allison Lisota,Female,20,5,2,15 min. or less,1,"Lane Keeping Assistance (LKA),Lane Departure Warning",1,2,3,4,2
+23,Lilia Pincheira ,Female,20,4,2,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Departure Warning",1,5,5,5,3
+24,Catherine Clisham,Female,20,4,2,15 min. or less,1,No,0,4,4,4,3
+25,Katherine Farrell,Female,21,5,2,16 - 30 min.,2,Adaptive Cruise Control (ACC),1,5,3,2,2
+27,Allie Biewenga,Female,19,3,2,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Departure Warning",1,4,4,4,4
+32,Ye Zhang,Female,28,10,2,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,5,4,4,1
+33,Mary Krane,Female,19,3,1,15 min. or less,1,No,0,4,3,3,2
+35,Anna Bender,Female,21,4,1,15 min. or less,1,No,0,2,3,4,1
+38,Zuleny Calderon,Female,20,5,4,15 min. or less,1,No,0,3,3,3,3
+39,Xiaowei Chen,Female,30,3,1,15 min. or less,1,No,0,4,4,4,2
+42,Ilinca Ciubotariu,Female,28,3,1,16 - 30 min.,2,No,0,1,1,1,1
+43,Sydney Anderson,Female,20,3,3,15 min. or less,1,No,0,2,3,4,1
+46,Juliana Miranda,Female,25,8,2,16 - 30 min.,2,No,0,3,3,3,3
+48,Stacey Baisden,Female,39,23,3,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA)",2,5,3,2,1
+50,Manaal Arif,Female,21,4,2,15 min. or less,1,"Lane Keeping Assistance (LKA),Lane Departure Warning",1,4,4,4,2
+22,Kayla Hawkins,Female,22,6,3,15 min. or less,1,No,0,4,3,3,4
+4,Sameeran Ganesh,Male,28,10,1,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning",2,3,2,2,2
+5,Tobii Yoo,Male,22,5,4,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Departure Warning,Forward Collision Warning",1,4,5,3,2
+6,Arya Deb,Male,23,5,4,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,4,2,3,3
+8,Franz Stoll,Male,32,14,1,15 min. or less,1,No,0,4,5,4,3
+9,Chen Feng,Male,30,10,2,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,4,4,4,3
+10,Zachery Sherrow,Male,22,7,2,16 - 30 min.,2,No,0,4,4,4,3
+13,Ryan Blackmore,Male,21,5,3,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,4,3,4,3
+14,Jakob Zhang,Male,19,2,3,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,4,4,4,2
+15,Christopher Park,Male,21,4,3,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,4,2,2,2
+16,Jair Zenil,Male,21,5,2,16 - 30 min.,2,No,0,1,3,1,1
+17,David Pike,Male,18,2,1,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning,Advanced self-driving features (such as Tesla's Autopilot), please specify:",3,4,3,4,3
+18,Joey Capitos,Male,20,1,1,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Departure Warning",1,2,1,1,1
+19,Zachary Nahorski,Male,21,5,1,15 min. or less,1,Lane Keeping Assistance (LKA),1,2,2,2,2
+26,Alexander Zimbalist,Male,20,3,1,15 min. or less,1,"Adaptive Cruise Control (ACC),Forward Collision Warning",1,3,3,3,4
+28,Zachary Bernstein,Male,20,5,2,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning,Advanced self-driving features (such as Tesla's Autopilot), please specify:",3,5,4,5,1
+29,Sri Iyer,Male,25,7,5,16 - 30 min.,2,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,3,4,3,2
+31,Daniel Paul,Male,19,4,2,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,4,2,2,2
+34,Simon Hasik,Male,20,4,2,15 min. or less,1,"Lane Keeping Assistance (LKA),Lane Departure Warning",1,4,4,4,2
+37,Frederik Weber,Male,31,11,4,15 min. or less,1,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",3,4,3,3,2
+40,Dave Montgomery,Male,47,31,4,16 - 30 min.,2,"Adaptive Cruise Control (ACC),Lane Keeping Assistance (LKA),Lane Departure Warning",2,2,1,2,1
+41,Oliver Smith,Male,19,4,1,15 min. or less,1,"Lane Keeping Assistance (LKA),Lane Departure Warning,Forward Collision Warning",1.5,4,3,3,2
+44,Davis Trujillo,Male,20,4,2,15 min. or less,1,Adaptive Cruise Control (ACC),1,3,2,2,2
+45,Schuyler Cox,Male,18,2,1,15 min. or less,1,No,0,4,3,3,3
+47,Zachary Roberts,Male,30,16,2,15 min. or less,1,No,0,2,3,2,2
