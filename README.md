@@ -1,3 +1,3 @@
 # Driver-take-over-behavior-prediction-in-autonomous-vehicle
-Ford-sponsored research project with Purdue NHanCE Lab
+Research project on driver take-over behavior in autonomous vehicle.
 
